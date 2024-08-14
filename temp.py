@@ -1,3 +1,5 @@
+import warnings
+warnings.filterwarnings("ignore")
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,6 +10,18 @@ def analyze_csv(filepath, column):
     df = pd.read_csv(filepath)
     pressure_data = df.iloc[:, column].tolist()
     time_data = df.iloc[:, 0].tolist()
+    
+    # Print the first 5 rows of the dataset
+    threshold = pressure_data[0]
+    print("1. Threshold is set to the first value of the pressure data: ", threshold)
+    print("2. The time data is in seconds")
+    print("3. The pressure data is in mmHg")
+    print("4. The difference between two inhales is 1500 seconds for MIP")
+    print("5. The difference between two exhales is 2250 seconds for MEP")
+    # print line seperation
+    print("-"*50)
+    
+    
     
     # Invert the dataset
     for i in range(len(pressure_data)):
@@ -26,9 +40,9 @@ def analyze_csv(filepath, column):
     
     for i in range(1, len(pressure_data) - 1):
         if pressure_data[i-1] < pressure_data[i] > pressure_data[i+1]:
-            peaks.append((i, pressure_data[i]))
+            peaks.append((i, round(pressure_data[i],3)))
         elif pressure_data[i-1] > pressure_data[i] < pressure_data[i+1]:
-            valleys.append((i, pressure_data[i]))
+            valleys.append((i, round(pressure_data[i],3)))
             
     peaks = sorted(peaks, key=lambda x: x[1], reverse=True)
     valleys = sorted(valleys, key=lambda x: x[1])
@@ -58,7 +72,7 @@ def analyze_csv(filepath, column):
     print("MEP: ", MEP)
     
     threshold = pressure_data[0]
-    print("Threshold: ", threshold)
+    # print("Threshold: ", threshold)
     
     peaks_ends=[]
     peaks_starts=[]
@@ -68,48 +82,104 @@ def analyze_csv(filepath, column):
     for peak in MIP:
         for i in range(peak[0], len(pressure_data)-1):
             if pressure_data[i] <= threshold:
-                peaks_ends.append({i: {pressure_data[i]: time_data[i]}})
+                peaks_ends.append({i: {round(pressure_data[i],3): time_data[i]}})
                 break
             
             
-    # find starting index  for each MIP
-    for peaks in MEP:
+    # find starting index for each MIP
+    for peaks in MIP:
         i=peaks[0]
-        while i>0 and pressure_data[i] >= threshold:
+        while i>0 and pressure_data[i] > threshold:
             i-=1
-        peaks_starts.append({i: {pressure_data[i]: time_data[i]}})
-            
+        peaks_starts.append({i: {round(pressure_data[i],3): time_data[i]}})
+    
+    print("Peaks Starts: ", peaks_starts)
+    print("Peaks Ends: ", peaks_ends)
     # find ending index of for each MEP
     for valley in MEP:
         for i in range(valley[0], len(pressure_data)-1):
             if pressure_data[i] >= threshold:
-                valleys_ends.append({i: {pressure_data[i]: time_data[i]}})
+                valleys_ends.append({i: {round(pressure_data[i],3): time_data[i]}})
                 break
             
-    # find starting index  for each MEP
+    # find starting index for each MEP
     for valley in MEP:
         i=valley[0]
-        while i>0 and pressure_data[i] <= threshold:
+        while i>0 and pressure_data[i] < threshold:
             i-=1
-        valleys_starts.append({i: {pressure_data[i]: time_data[i]}})
+        valleys_starts.append({i: {round(pressure_data[i],3): time_data[i]}})
         
-    # calculate the area under the curve for each MIP and MEP
-    peak_area = []
-    valley_area = []
+        
+    # 
+
+    def calculate_shaded_area(time_data, pressure_data, threshold, start_index, end_index):
+        # Adjust pressure data by subtracting the threshold to get the difference from the threshold
+        adjusted_pressure_data = [pressure - threshold for pressure in pressure_data[start_index:end_index]]
+        
+        # Calculate the area under the curve using the trapezoidal rule
+        area = integrate.trapz(adjusted_pressure_data, time_data[start_index:end_index])
+        return round(abs(area),3)  # Use abs to ensure the area is positive
+
+        
+    # calculate the area under the curve for each MIP and MEP (Total area under the curve for each MIP and MEP)
+    total_peak_area = []
+    total_valley_area = []
+    SMIP = []
     for i in range(len(MIP)):
         start = list(peaks_starts[i].keys())[0]
         end = list(peaks_ends[i].keys())[0]
-        area = integrate.trapz(pressure_data[start:end], time_data[start:end])
-        peak_area.append(area)
+        # area = integrate.trapz(pressure_data[start:end], time_data[start:end])
+        area = calculate_shaded_area(time_data, pressure_data, threshold, start, end)        
+        total_peak_area.append(area)
+        
+        area = calculate_shaded_area(time_data, pressure_data, threshold, start, MIP[i][0])   
+        SMIP.append(area)     
+        
         
     for i in range(len(MEP)):
         start = list(valleys_starts[i].keys())[0]
         end = list(valleys_ends[i].keys())[0]
-        area = integrate.trapz(pressure_data[start:end], time_data[start:end])
-        valley_area.append(area)
+        # area = integrate.trapz(pressure_data[start:end], time_data[start:end])
+        area=calculate_shaded_area(time_data, pressure_data, threshold, start, end)
+        total_valley_area.append(area)
         
-    print("Peak Area: ", peak_area)
-    print("Valley Area: ", valley_area)
+    
+    
+    
+    # Find time between starting and peaks of each MIP and MEP
+    inspiration_time = []
+    expiration_time = []
+    for i in range(len(MIP)):
+        start = list(peaks_starts[i].keys())[0]
+        end = MIP[i][0]
+        inspiration_time.append(time_data[end]-time_data[start])
+        
+    for i in range(len(MEP)):
+        start = MEP[i][0]
+        end = list(valleys_ends[i].keys())[0]
+        expiration_time.append(time_data[end]-time_data[start])
+        
+        
+        
+    print("Inspiration Time: ", inspiration_time)
+    print("Expiration Time: ", expiration_time)
+    print("SMIP: ", SMIP)
+    print("Power or Total Peak Area: ", total_peak_area)
+    # print("Toatl Valley Area: ", total_valley_area)
+         
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # Code for Plottting
     
     
     plt.figure(figsize=(12, 6))
@@ -120,28 +190,12 @@ def analyze_csv(filepath, column):
     for i in range(len(MIP)):
         start = list(peaks_starts[i].keys())[0]
         end = list(peaks_ends[i].keys())[0]
-        plt.fill_between(time_data[start:end], pressure_data[start:end], color='red', alpha=0.5)
+        plt.fill_between(time_data[start:end], pressure_data[start:end],threshold, color='red', alpha=0.5)
         
     for i in range(len(MEP)):
         start = list(valleys_starts[i].keys())[0]
         end = list(valleys_ends[i].keys())[0]
-        plt.fill_between(time_data[start:end], pressure_data[start:end], color='blue', alpha=0.5)
-        
-    # find time to peak and time to valley for each MIP and MEP
-    time_to_peak = []
-    time_to_valley = []
-    for i in range(len(MIP)):
-        start = list(peaks_starts[i].keys())[0]
-        end = list(peaks_ends[i].keys())[0]
-        time_to_peak.append(time_data[start]-time_data[end])
-    
-    for i in range(len(MEP)):
-        start = list(valleys_starts[i].keys())[0]
-        end = list(valleys_ends[i].keys())[0]
-        time_to_valley.append(time_data[start]-time_data[end])
-        
-    print("Time to MIP: ", time_to_peak)
-    print("Time to MEP: ", time_to_valley)   
+        plt.fill_between(time_data[start:end], pressure_data[start:end],threshold, color='blue', alpha=0.5)  
     
 
     # Highlight MIP points
@@ -161,11 +215,29 @@ def analyze_csv(filepath, column):
     # Label individual MEP points
     for i, (x, y) in enumerate(zip(mep_x, mep_y)):
         plt.annotate(f'MEP {i+1}', (x, y), textcoords="offset points", xytext=(0,-15), ha='center')
-
+        
+    for i, (start, end) in enumerate(zip(peaks_starts, peaks_ends)):
+        start_index = list(start.keys())[0]
+        end_index = list(end.keys())[0]
+        
+        # Scatter plot for peak starts and ends
+        plt.scatter(time_data[start_index], pressure_data[start_index], color='blue', s=100)
+        plt.scatter(time_data[end_index], pressure_data[end_index], color='blue', s=100)
+        
+        
+    for i, (start, end) in enumerate(zip(valleys_starts, valleys_ends)):
+        start_index = list(start.keys())[0]
+        end_index = list(end.keys())[0]
+        
+        # Scatter plot for peak starts and ends
+        plt.scatter(time_data[start_index], pressure_data[start_index], color='blue', s=100)
+        plt.scatter(time_data[end_index], pressure_data[end_index], color='blue', s=100)
+        
+        
     plt.legend()
     plt.title('Pressure Data with MIP and MEP Highlighted')
     plt.xlabel('Time (seconds)')
     plt.ylabel('Pressure')
     plt.show()
 
-analyze_csv('./Pressure_data_2024_07_31_13_41_02.csv', 3)
+analyze_csv('./Pressure_data_2024_07_31_13_41_02.csv', 1)
